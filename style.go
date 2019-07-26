@@ -75,6 +75,11 @@ func (style *Style) makeXLSXStyleElements() (xFont xlsxFont, xFill xlsxFill, xBo
 	} else {
 		xFont.U = nil
 	}
+	if style.Font.Strikethrough {
+		xFont.S = &xlsxVal{}
+	} else {
+		xFont.S = nil
+	}
 	xPatternFill := xlsxPatternFill{}
 	xPatternFill.PatternType = style.Fill.PatternType
 	xPatternFill.FgColor.RGB = style.Fill.FgColor
@@ -151,14 +156,15 @@ func NewFill(patternType, fgColor, bgColor string) *Fill {
 }
 
 type Font struct {
-	Size      int
-	Name      string
-	Family    int
-	Charset   int
-	Color     string
-	Bold      bool
-	Italic    bool
-	Underline bool
+	Size          int
+	Name          string
+	Family        int
+	Charset       int
+	Color         string
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Strikethrough bool
 }
 
 func NewFont(size int, name string) *Font {

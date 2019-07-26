@@ -16,14 +16,15 @@ import (
 // File is a high level structure providing a slice of Sheet structs
 // to the user.
 type File struct {
-	worksheets     map[string]*zip.File
-	referenceTable *RefTable
-	Date1904       bool
-	styles         *xlsxStyleSheet
-	Sheets         []*Sheet
-	Sheet          map[string]*Sheet
-	theme          *theme
-	DefinedNames   []*xlsxDefinedName
+	worksheets         map[string]*zip.File
+	referenceTable     *RefTable
+	Date1904           bool
+	styles             *xlsxStyleSheet
+	Sheets             []*Sheet
+	Sheet              map[string]*Sheet
+	theme              *theme
+	DefinedNames       []*xlsxDefinedName
+	sheetRelationships map[string]*xmlSheetRels // SheetName to its relationshipType
 }
 
 const NoRowLimit int = -1
@@ -31,9 +32,10 @@ const NoRowLimit int = -1
 // Create a new File
 func NewFile() *File {
 	return &File{
-		Sheet:        make(map[string]*Sheet),
-		Sheets:       make([]*Sheet, 0),
-		DefinedNames: make([]*xlsxDefinedName, 0),
+		Sheet:              make(map[string]*Sheet),
+		Sheets:             make([]*Sheet, 0),
+		DefinedNames:       make([]*xlsxDefinedName, 0),
+		sheetRelationships: make(map[string]*xmlSheetRels),
 	}
 }
 
@@ -150,7 +152,7 @@ func (f *File) Write(writer io.Writer) (err error) {
 	return zipWriter.Close()
 }
 
-// Add a new Sheet, with the provided name, to a File. 
+// Add a new Sheet, with the provided name, to a File.
 // The maximum sheet name length is 31 characters. If the sheet name length is exceeded an error is thrown.
 // These special characters are also not allowed: : \ / ? * [ ]
 func (f *File) AddSheet(sheetName string) (*Sheet, error) {

@@ -28,6 +28,7 @@ var builtInNumFmt = map[int]string{
 	2:  "0.00",
 	3:  "#,##0",
 	4:  "#,##0.00",
+	5:  `"$"#,##0_);\("$"#,##0\)`,
 	9:  "0%",
 	10: "0.00%",
 	11: "0.00e+00",
@@ -47,7 +48,7 @@ var builtInNumFmt = map[int]string{
 	39: "#,##0.00;(#,##0.00)",
 	40: "#,##0.00;[red](#,##0.00)",
 	41: `_(* #,##0_);_(* \(#,##0\);_(* "-"_);_(@_)`,
-	42: `_("$"* #,##0_);_("$* \(#,##0\);_("$"* "-"_);_(@_)`,
+	42: `_("$"* #,##0_);_("$"* \(#,##0\);_("$"* "-"_);_(@_)`,
 	43: `_(* #,##0.00_);_(* \(#,##0.00\);_(* "-"??_);_(@_)`,
 	44: `_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)`,
 	45: "mm:ss",
@@ -103,7 +104,7 @@ type xlsxStyleSheet struct {
 
 	theme *theme
 
-	sync.RWMutex // protects the following
+	sync.RWMutex      // protects the following
 	styleCache        map[int]*Style
 	numFmtRefTable    map[int]xlsxNumFmt
 	parsedNumFmtTable map[string]*parsedNumberFormat
@@ -192,6 +193,7 @@ func (styles *xlsxStyleSheet) getStyle(styleIndex int) *Style {
 			style.Font.Family, _ = strconv.Atoi(xfont.Family.Val)
 			style.Font.Charset, _ = strconv.Atoi(xfont.Charset.Val)
 			style.Font.Color = styles.argbValue(xfont.Color)
+			style.Font.VertAlign = xfont.VertAlign.Val
 
 			if bold := xfont.B; bold != nil && bold.Val != "0" {
 				style.Font.Bold = true
@@ -202,6 +204,9 @@ func (styles *xlsxStyleSheet) getStyle(styleIndex int) *Style {
 			if underline := xfont.U; underline != nil && underline.Val != "0" {
 				style.Font.Underline = true
 			}
+			if strike := xfont.S; strike != nil && strike.Val != "0" {
+				style.Font.Strikethrough = true
+			}
 		}
 		if xf.Alignment.Horizontal != "" {
 			style.Alignment.Horizontal = xf.Alignment.Horizontal
@@ -210,6 +215,9 @@ func (styles *xlsxStyleSheet) getStyle(styleIndex int) *Style {
 		if xf.Alignment.Vertical != "" {
 			style.Alignment.Vertical = xf.Alignment.Vertical
 		}
+
+		style.Alignment.Indent, _ = strconv.Atoi(xf.Alignment.Indent)
+
 		style.Alignment.WrapText = xf.Alignment.WrapText
 		style.Alignment.TextRotation = xf.Alignment.TextRotation
 
@@ -370,7 +378,7 @@ func (styles *xlsxStyleSheet) newNumFmt(formatCode string) xlsxNumFmt {
 // addNumFmt add xlsxNumFmt if its not exist.
 func (styles *xlsxStyleSheet) addNumFmt(xNumFmt xlsxNumFmt) {
 	// don't add built in NumFmt
-	if xNumFmt.NumFmtId <= builtinNumFmtsCount {
+	if _, ok := builtInNumFmt[xNumFmt.NumFmtId]; ok {
 		return
 	}
 	_, ok := styles.numFmtRefTable[xNumFmt.NumFmtId]
@@ -522,14 +530,16 @@ func (fonts *xlsxFonts) Marshal(outputFontMap map[int]int) (result string, err e
 // currently I have not checked it for completeness - it does as much
 // as I need.
 type xlsxFont struct {
-	Sz      xlsxVal   `xml:"sz,omitempty"`
-	Name    xlsxVal   `xml:"name,omitempty"`
-	Family  xlsxVal   `xml:"family,omitempty"`
-	Charset xlsxVal   `xml:"charset,omitempty"`
-	Color   xlsxColor `xml:"color,omitempty"`
-	B       *xlsxVal  `xml:"b,omitempty"`
-	I       *xlsxVal  `xml:"i,omitempty"`
-	U       *xlsxVal  `xml:"u,omitempty"`
+	Sz        xlsxVal   `xml:"sz,omitempty"`
+	Name      xlsxVal   `xml:"name,omitempty"`
+	Family    xlsxVal   `xml:"family,omitempty"`
+	Charset   xlsxVal   `xml:"charset,omitempty"`
+	Color     xlsxColor `xml:"color,omitempty"`
+	VertAlign xlsxVal   `xml:"vertAlign,omitempty"` //superscript, subscript
+	B         *xlsxVal  `xml:"b,omitempty"`
+	I         *xlsxVal  `xml:"i,omitempty"`
+	U         *xlsxVal  `xml:"u,omitempty"`
+	S         *xlsxVal  `xml:"strike,omitempty"`
 }
 
 func (font *xlsxFont) Equals(other xlsxFont) bool {
@@ -542,7 +552,10 @@ func (font *xlsxFont) Equals(other xlsxFont) bool {
 	if (font.U == nil && other.U != nil) || (font.U != nil && other.U == nil) {
 		return false
 	}
-	return font.Sz.Equals(other.Sz) && font.Name.Equals(other.Name) && font.Family.Equals(other.Family) && font.Charset.Equals(other.Charset) && font.Color.Equals(other.Color)
+	if (font.S == nil && other.S != nil) || (font.S != nil && other.S == nil) {
+		return false
+	}
+	return font.Sz.Equals(other.Sz) && font.Name.Equals(other.Name) && font.Family.Equals(other.Family) && font.Charset.Equals(other.Charset) && font.Color.Equals(other.Color) && font.VertAlign.Equals(other.VertAlign)
 }
 
 func (font *xlsxFont) Marshal() (result string, err error) {
@@ -562,6 +575,9 @@ func (font *xlsxFont) Marshal() (result string, err error) {
 	if font.Color.RGB != "" {
 		result += fmt.Sprintf(`<color rgb="%s"/>`, font.Color.RGB)
 	}
+	if font.VertAlign.Val != "" {
+		result += fmt.Sprintf(`<vertAlign val="%s"/>`, font.VertAlign.Val)
+	}
 	if font.B != nil {
 		result += "<b/>"
 	}
@@ -570,6 +586,9 @@ func (font *xlsxFont) Marshal() (result string, err error) {
 	}
 	if font.U != nil {
 		result += "<u/>"
+	}
+	if font.S != nil {
+		result += "<strike/>"
 	}
 	return result + "</font>", nil
 }
@@ -925,7 +944,7 @@ func (xf *xlsxXf) Marshal(outputBorderMap, outputFillMap, outputFontMap map[int]
 
 type xlsxAlignment struct {
 	Horizontal   string `xml:"horizontal,attr"`
-	Indent       int    `xml:"indent,attr"`
+	Indent       string `xml:"indent,attr"`
 	ShrinkToFit  bool   `xml:"shrinkToFit,attr"`
 	TextRotation int    `xml:"textRotation,attr"`
 	Vertical     string `xml:"vertical,attr"`
@@ -948,7 +967,11 @@ func (alignment *xlsxAlignment) Marshal() (result string, err error) {
 	if alignment.Vertical == "" {
 		alignment.Vertical = "bottom"
 	}
-	return fmt.Sprintf(`<alignment horizontal="%s" indent="%d" shrinkToFit="%b" textRotation="%d" vertical="%s" wrapText="%b"/>`, alignment.Horizontal, alignment.Indent, bool2Int(alignment.ShrinkToFit), alignment.TextRotation, alignment.Vertical, bool2Int(alignment.WrapText)), nil
+	if alignment.Indent == "" {
+		alignment.Indent = "0"
+	}
+
+	return fmt.Sprintf(`<alignment horizontal="%s" indent="%s" shrinkToFit="%b" textRotation="%d" vertical="%s" wrapText="%b"/>`, alignment.Horizontal, alignment.Indent, bool2Int(alignment.ShrinkToFit), alignment.TextRotation, alignment.Vertical, bool2Int(alignment.WrapText)), nil
 }
 
 func bool2Int(b bool) int {
