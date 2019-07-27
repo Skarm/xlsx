@@ -165,6 +165,7 @@ type Font struct {
 	Italic        bool
 	Underline     bool
 	Strikethrough bool
+	VertAlign     string
 }
 
 func NewFont(size int, name string) *Font {
